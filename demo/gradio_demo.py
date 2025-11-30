@@ -370,12 +370,12 @@ if __name__ == "__main__":
         )
         scribble_reset_bttn.click(
             reset_scribble,
-            [img, img_with_scribble,  prompts],
+            [img, img_with_scribble, prompts],
             [img_with_scribble, zim_mask],
         )
         scribble_bttn.click(
             update_scribble,
-            [img, img_with_scribble,  prompts],
+            [img, img_with_scribble, prompts],
             [zim_mask, prompts],
         )
 
