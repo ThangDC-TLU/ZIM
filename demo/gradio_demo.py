@@ -1,34 +1,53 @@
-import os
-import sys
-
-# Khắc phục lỗi ModuleNotFoundError cho các modules nội bộ
+import os, sys
+# Cần đảm bảo rằng các module như zim_anything đã được cài đặt hoặc có trong sys.path
+# Vì bạn đã có sys.path.append(os.getcwd()), giả sử các module nằm trong thư mục làm việc.
 sys.path.append(os.getcwd())
 
 import torch
 import gradio as gr
+# Cần đảm bảo gradio_image_prompter đã được cài đặt.
+# !pip install gradio_image_prompter # chạy lệnh này nếu chưa cài
 from gradio_image_prompter import ImagePrompter
 import numpy as np
 import cv2
+from zim_anything import zim_model_registry, ZimPredictor, ZimAutomaticMaskGenerator
+from zim_anything.utils import show_mat_anns
 
-# Kiểm tra để đảm bảo các module nội bộ này tồn tại
-try:
-    from zim_anything import zim_model_registry, ZimPredictor, ZimAutomaticMaskGenerator
-    from zim_anything.utils import show_mat_anns
-except ImportError as e:
-    print(f"Lỗi: Không tìm thấy module ZIM. Hãy đảm bảo bạn đã clone thư mục 'ZIM' và đang chạy từ /kaggle/working/. Chi tiết lỗi: {e}")
-    sys.exit(1)
+# --- Bắt đầu phần thay đổi cho Kaggle ---
+# Cấu hình đường dẫn cho Kaggle
+KAGGLE_INPUT_DIR = "/kaggle/input"
+DATASET_NAME = "zim-vit-l-2092"
+CKPT_PATH = os.path.join(KAGGLE_INPUT_DIR, DATASET_NAME)
 
-# --- SỬA LỖI ĐƯỜNG DẪN TƯƠNG ĐỐI (RELATIVE PATH) ---
-# Lấy đường dẫn tuyệt đối của thư mục chứa script hiện tại (ZIM/demo/)
-# Đây là cách đáng tin cậy nhất để tìm checkpoint
-CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
-RESULTS_DIR = os.path.join(CURRENT_FILE_DIR, "results")
-# -----------------------------------------------------
+def get_examples():
+    # Kiểm tra đường dẫn ví dụ. Thay đổi nếu thư mục ví dụ là một phần của input dataset.
+    # Giả sử thư mục 'examples' nằm trong thư mục làm việc hiện tại (os.getcwd())
+    assets_dir = os.path.join(os.getcwd(), 'examples') 
+    
+    # Nếu thư mục 'examples' là một phần của dataset input:
+    # assets_dir = os.path.join(CKPT_PATH, 'examples') 
+    
+    if not os.path.exists(assets_dir):
+        print(f"Thư mục ví dụ không tìm thấy tại: {assets_dir}. Vui lòng tạo hoặc tải lên thư mục 'examples'.")
+        return []
 
+    images = os.listdir(assets_dir)
+    # Lọc chỉ lấy file ảnh (cần thiết)
+    image_files = [img for img in images if img.lower().endswith(('.png', '.jpg', '.jpeg'))]
+    return [os.path.join(assets_dir, img) for img in image_files]
+# --- Kết thúc phần thay đổi cho Kaggle ---
+
+
+# Giữ nguyên các hàm khác
 def get_shortest_axis(image):
     h, w, _ = image.shape
     return h if h < w else w
 
+# ... [giữ nguyên các hàm reset_image, reset_example_image, run_amg, run_model, 
+# reset_scribble, update_scribble, draw_point, draw_images, get_point_or_box_prompts] ...
+
+# Thêm lại các hàm bị cắt ở trên để có thể copy-paste toàn bộ, hoặc đảm bảo các hàm này
+# có trong file script bạn đang chạy. (Không thêm lại ở đây để tránh lặp lại mã)
 def reset_image(image, prompts):
     if image is None:
         image = np.zeros((1024, 1024, 3), dtype=np.uint8)
@@ -103,7 +122,7 @@ def run_model(image, prompts):
 
     return zim_mask
 
-def reset_scribble(image, scribble, prompts):
+def reset_scribble(image, scribble,  prompts):
     # scribble = dict()
     for k in prompts.keys():
         prompts[k] = []
@@ -168,19 +187,16 @@ def draw_images(image, mask, prompts):
 
     if "point" in prompts:
         for type, pts in prompts["point"]:
-            if type == "Positive":
+            if type == 1: # type == "Positive": # Thay đổi từ string sang int (1)
                 color = (0, 0, 255)
                 draw_point(img_with_point, pts, size, color)
-            elif type == "Negative":
+            elif type == 0: # type == "Negative": # Thay đổi từ string sang int (0)
                 color = (255, 0, 0)
                 draw_point(img_with_point, pts, size, color)
 
-    size = int(minor / 200)
+    # Đảm bảo trả về đủ 3 giá trị (img, img_with_mask, img_with_point)
+    return image, img_with_mask, img_with_point
 
-    return (
-        img,
-        img_with_mask,
-    )
 
 def get_point_or_box_prompts(img, prompts):
     image, img_prompts = img['image'], img['points']
@@ -189,18 +205,19 @@ def get_point_or_box_prompts(img, prompts):
     for prompt in img_prompts:
         for p in range(len(prompt)):
             prompt[p] = int(prompt[p])
-        if prompt[2] == 2 and prompt[5] == 3:  # box prompt
+        if prompt[2] == 2 and prompt[5] == 3:  # box prompt
             box_prompts = [[prompt[0], prompt[1], prompt[3], prompt[4]], ]
-        elif prompt[2] == 1 and prompt[5] == 4:  # Positive point prompt
+        elif prompt[2] == 1 and prompt[5] == 4:  # Positive point prompt
             point_prompts.append((1, (prompt[0], prompt[1])))
-        elif prompt[2] == 0 and prompt[5] == 4:  # Negative point prompt
+        elif prompt[2] == 0 and prompt[5] == 4:  # Negative point prompt
             point_prompts.append((0, (prompt[0], prompt[1])))
 
     if "scribble" in prompts:
         del prompts["scribble"]
 
     if len(point_prompts) > 0:
-        prompts['point'] = point_prompts
+        # Sử dụng 1 cho Positive và 0 cho Negative như trong hàm run_model
+        prompts['point'] = point_prompts 
     elif 'point' in prompts:
         del prompts['point']
 
@@ -213,17 +230,14 @@ def get_point_or_box_prompts(img, prompts):
 
     return image, zim_mask, prompts
 
-def get_examples():
-    assets_dir = os.path.join(os.path.dirname(__file__), 'examples')
-    images = os.listdir(assets_dir)
-    return [os.path.join(assets_dir, img) for img in images]
 
 if __name__ == "__main__":
 
-    # BẮT ĐẦU TÍNH TOÁN ĐƯỜNG DẪN CHECKPOINT
     backbone = "vit_l"
-    # SỬ DỤNG ĐƯỜNG DẪN TUYỆT ĐỐI KHẮC PHỤC LỖI NOSUCHFILE
-    ckpt_p = os.path.join(RESULTS_DIR, "zim_vit_l_2092")
+    # --- SỬA ĐỔI CHÍNH Ở ĐÂY ---
+    # Sử dụng đường dẫn checkpoint đã được xác định ở đầu
+    ckpt_p = CKPT_PATH 
+    # --- KẾT THÚC SỬA ĐỔI CHÍNH ---
 
     model = zim_model_registry[backbone](checkpoint=ckpt_p)
     if torch.cuda.is_available():
@@ -272,11 +286,19 @@ if __name__ == "__main__":
                     scribble_bttn = gr.Button("Run")
                     scribble_reset_bttn = gr.Button("Reset Scribbles")
                     amg_scribble_bttn = gr.Button("Automatic Mask Generation")
-                    
+                
                 # Example image
                 gr.Examples(get_examples(), inputs=[example_image])
 
+            # with gr.Row():
             with gr.Column():
+                # Thêm một tab cho ảnh có điểm/box được vẽ lên
+                with gr.Tab(label="ZIM Image with Prompts"):
+                    img_with_point_vis = gr.Image(
+                        label="ZIM Image with Prompts", 
+                        interactive=False
+                    )
+
                 with gr.Tab(label="ZIM Image"):
                     img_with_zim_mask = gr.Image(
                         label="ZIM Image", 
@@ -343,22 +365,25 @@ if __name__ == "__main__":
             draw_images,
             [img, zim_mask, prompts],
             [
-                img, img_with_zim_mask, 
+                img, img_with_zim_mask, img_with_point_vis # Cập nhật đầu ra của draw_images
             ],
         )
         scribble_reset_bttn.click(
             reset_scribble,
-            [img, img_with_scribble, prompts],
+            [img, img_with_scribble,  prompts],
             [img_with_scribble, zim_mask],
         )
         scribble_bttn.click(
             update_scribble,
-            [img, img_with_scribble, prompts],
+            [img, img_with_scribble,  prompts],
             [zim_mask, prompts],
         )
 
     demo.queue()
+    # --- SỬA ĐỔI CHÍNH Ở ĐÂY ---
+    # Chạy launch Gradio trong môi trường Notebook
     demo.launch(
-        server_name="0.0.0.0",
-        server_port=11928,
+        # Xóa server_name và server_port để Gradio tự động hiển thị
+        # Có thể dùng debug=True nếu cần kiểm tra lỗi
     )
+    # --- KẾT THÚC SỬA ĐỔI CHÍNH ---
