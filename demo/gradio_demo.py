@@ -122,7 +122,7 @@ def run_model(image, prompts):
 
     return zim_mask
 
-def reset_scribble(image, scribble,  prompts):
+def reset_scribble(image, scribble, prompts):
     # scribble = dict()
     for k in prompts.keys():
         prompts[k] = []
