@@ -1,20 +1,29 @@
-"""
-Copyright (c) 2024-present Naver Cloud Corp.
+import os
+import sys
 
-This source code is licensed under the license found in the
-LICENSE file in the root directory of this source tree.
-"""
-import os, sys
+# Khắc phục lỗi ModuleNotFoundError cho các modules nội bộ
 sys.path.append(os.getcwd())
 
-import os
 import torch
 import gradio as gr
 from gradio_image_prompter import ImagePrompter
 import numpy as np
 import cv2
-from zim_anything import zim_model_registry, ZimPredictor, ZimAutomaticMaskGenerator
-from zim_anything.utils import show_mat_anns
+
+# Kiểm tra để đảm bảo các module nội bộ này tồn tại
+try:
+    from zim_anything import zim_model_registry, ZimPredictor, ZimAutomaticMaskGenerator
+    from zim_anything.utils import show_mat_anns
+except ImportError as e:
+    print(f"Lỗi: Không tìm thấy module ZIM. Hãy đảm bảo bạn đã clone thư mục 'ZIM' và đang chạy từ /kaggle/working/. Chi tiết lỗi: {e}")
+    sys.exit(1)
+
+# --- SỬA LỖI ĐƯỜNG DẪN TƯƠNG ĐỐI (RELATIVE PATH) ---
+# Lấy đường dẫn tuyệt đối của thư mục chứa script hiện tại (ZIM/demo/)
+# Đây là cách đáng tin cậy nhất để tìm checkpoint
+CURRENT_FILE_DIR = os.path.dirname(os.path.abspath(__file__))
+RESULTS_DIR = os.path.join(CURRENT_FILE_DIR, "results")
+# -----------------------------------------------------
 
 def get_shortest_axis(image):
     h, w, _ = image.shape
@@ -94,7 +103,7 @@ def run_model(image, prompts):
 
     return zim_mask
 
-def reset_scribble(image, scribble,  prompts):
+def reset_scribble(image, scribble, prompts):
     # scribble = dict()
     for k in prompts.keys():
         prompts[k] = []
@@ -211,8 +220,10 @@ def get_examples():
 
 if __name__ == "__main__":
 
+    # BẮT ĐẦU TÍNH TOÁN ĐƯỜNG DẪN CHECKPOINT
     backbone = "vit_l"
-    ckpt_p = "results/zim_vit_l_2092"
+    # SỬ DỤNG ĐƯỜNG DẪN TUYỆT ĐỐI KHẮC PHỤC LỖI NOSUCHFILE
+    ckpt_p = os.path.join(RESULTS_DIR, "zim_vit_l_2092")
 
     model = zim_model_registry[backbone](checkpoint=ckpt_p)
     if torch.cuda.is_available():
@@ -261,11 +272,10 @@ if __name__ == "__main__":
                     scribble_bttn = gr.Button("Run")
                     scribble_reset_bttn = gr.Button("Reset Scribbles")
                     amg_scribble_bttn = gr.Button("Automatic Mask Generation")
-                
+                    
                 # Example image
                 gr.Examples(get_examples(), inputs=[example_image])
 
-            # with gr.Row():
             with gr.Column():
                 with gr.Tab(label="ZIM Image"):
                     img_with_zim_mask = gr.Image(
@@ -338,12 +348,12 @@ if __name__ == "__main__":
         )
         scribble_reset_bttn.click(
             reset_scribble,
-            [img, img_with_scribble,  prompts],
+            [img, img_with_scribble, prompts],
             [img_with_scribble, zim_mask],
         )
         scribble_bttn.click(
             update_scribble,
-            [img, img_with_scribble,  prompts],
+            [img, img_with_scribble, prompts],
             [zim_mask, prompts],
         )
 
