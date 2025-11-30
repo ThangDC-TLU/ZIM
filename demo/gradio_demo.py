@@ -205,11 +205,11 @@ def get_point_or_box_prompts(img, prompts):
     for prompt in img_prompts:
         for p in range(len(prompt)):
             prompt[p] = int(prompt[p])
-        if prompt[2] == 2 and prompt[5] == 3:  # box prompt
+        if prompt[2] == 2 and prompt[5] == 3: # box prompt
             box_prompts = [[prompt[0], prompt[1], prompt[3], prompt[4]], ]
-        elif prompt[2] == 1 and prompt[5] == 4:  # Positive point prompt
+        elif prompt[2] == 1 and prompt[5] == 4: # Positive point prompt
             point_prompts.append((1, (prompt[0], prompt[1])))
-        elif prompt[2] == 0 and prompt[5] == 4:  # Negative point prompt
+        elif prompt[2] == 0 and prompt[5] == 4: # Negative point prompt
             point_prompts.append((0, (prompt[0], prompt[1])))
 
     if "scribble" in prompts:
